@@ -2,21 +2,17 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Title</title>
+    <title>image2text</title>
     <script type="text/javascript">
         async function submit_cvt() {
             let cvtForm = document.getElementById("cvt_form")
             let cvtDate = new FormData(cvtForm)
-            /*for (let item of cvtForm.querySelectorAll("input[type='checkbox']")) {
-                cvtDate.set(item.name, item.checked)
-            }*/
-
             let response = await fetch('/cvt', {
                 method: "POST",
                 body: cvtDate
             })
             document.getElementById('txt_show').innerText = await response.text()
-
+            document.getElementById('copy_btn').hidden = null
         }
     </script>
 
@@ -26,25 +22,19 @@
 <form action="/cvt" method="post" id="cvt_form">
     <table>
         <tr>
-            <td>file</td>
+            <td>选择文件</td>
             <td><input type="file" name="image"></td>
         </tr>
         <tr>
             <td>一行几个字符</td>
             <td><label>
-                <input type="number" name="col_x" value="20">
+                <input type="number" name="n" value="30">
             </label></td>
         </tr>
         <tr>
-            <td>阈值，值越大黑越多</td>
+            <td>阈值，0到255</td>
             <td><label>
-                <input type="text" name="threshold" value="0.5">
-            </label></td>
-        </tr>
-        <tr>
-            <td>纯黑替换</td>
-            <td><label>
-                <input type="checkbox" checked name="no_black">
+                <input type="number" name="threshold" value="127">
             </label></td>
         </tr>
         <tr>
@@ -63,9 +53,9 @@
         </tr>
     </table>
 </form>
-
-<pre id="txt_show">
-
-</pre>
+<button id="copy_btn" onclick="navigator.clipboard.writeText(document.getElementById('txt_show').innerText)"
+        hidden="hidden">复制文本
+</button>
+<pre id="txt_show"></pre>
 </body>
 </html>
