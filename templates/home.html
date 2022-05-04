@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <script type="text/javascript">
+        async function submit_cvt() {
+            let cvtForm = document.getElementById("cvt_form")
+            let cvtDate = new FormData(cvtForm)
+            /*for (let item of cvtForm.querySelectorAll("input[type='checkbox']")) {
+                cvtDate.set(item.name, item.checked)
+            }*/
+
+            let response = await fetch('/cvt', {
+                method: "POST",
+                body: cvtDate
+            })
+            document.getElementById('txt_show').innerText = await response.text()
+
+        }
+    </script>
+
+</head>
+<body>
+
+<form action="/cvt" method="post" id="cvt_form">
+    <table>
+        <tr>
+            <td>file</td>
+            <td><input type="file" name="image"></td>
+        </tr>
+        <tr>
+            <td>一行几个字符</td>
+            <td><label>
+                <input type="number" name="col_x" value="20">
+            </label></td>
+        </tr>
+        <tr>
+            <td>阈值，值越大黑越多</td>
+            <td><label>
+                <input type="text" name="threshold" value="0.5">
+            </label></td>
+        </tr>
+        <tr>
+            <td>纯黑替换</td>
+            <td><label>
+                <input type="checkbox" checked name="no_black">
+            </label></td>
+        </tr>
+        <tr>
+            <td>图片反相</td>
+            <td><label>
+                <input type="checkbox" checked name="image_inverse">
+            </label></td>
+        </tr>
+        <tr>
+            <td>提交</td>
+            <td>
+                <button onclick="submit_cvt()" type="button">
+                    提交
+                </button>
+            </td>
+        </tr>
+    </table>
+</form>
+
+<pre id="txt_show">
+
+</pre>
+</body>
+</html>
