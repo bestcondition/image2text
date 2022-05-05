@@ -1,10 +1,12 @@
 import argparse
 import curses
+import os
 import time
 from math import ceil
 from pathlib import Path
 from typing import List
 from collections import deque
+import multiprocessing
 
 import cv2
 from tqdm import tqdm
@@ -16,6 +18,17 @@ DEFAULT_ENCODING = 'utf-8'
 
 def get_n(width):
     return ceil(width // META_W)
+
+
+def image2text_for_pool(frame_arg):
+    """
+    多进程用
+
+    :param frame_arg:
+    :return:
+    """
+    frame, n, threshold, image_inverse = frame_arg
+    return TextImage.from_array(frame, n, threshold, image_inverse)
 
 
 class TextVideo:
@@ -59,23 +72,29 @@ class TextVideo:
         # 每行字符数
         n = get_n(width)
         # 生成的图像队列
-        text_image_deque = deque()
+        text_image_list = []
         # 视频流读取
         video_capture = cv2.VideoCapture(str(real_video_file))
         # fps
         fps = video_capture.get(cv2.CAP_PROP_FPS)
         # 总帧数，用来显示读取进度
-        frame_num = video_capture.get(cv2.CAP_PROP_FRAME_COUNT)
-        tq = tqdm(total=frame_num)
-        success, frame = video_capture.read()
-        while success:
-            a_text_image = TextImage.from_array(frame, n, threshold, image_inverse)
-            text_image_deque.append(a_text_image)
-            tq.update(1)
-            success, frame = video_capture.read()
+        frame_number = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        # tq = tqdm(total=frame_number)
+
+        processes = max(1, os.cpu_count() - 1)
+
+        frame_gen = (
+            (video_capture.read()[1], n, threshold, image_inverse)
+            for i in range(frame_number)
+        )
+
+        with multiprocessing.Pool(processes=processes) as pool:
+            text_image_list = list(
+                tqdm(pool.imap(image2text_for_pool, frame_gen), total=frame_number, desc='渲染中'))
+
         video_capture.release()
         return cls(
-            image_list=list(text_image_deque),
+            image_list=text_image_list,
             fps=fps
         )
 
