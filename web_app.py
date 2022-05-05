@@ -1,6 +1,6 @@
 from flask import Flask, request, render_template
 
-from cvt import im_read, image2text
+from text_image import im_read, image2text
 
 app = Flask(__name__)
 

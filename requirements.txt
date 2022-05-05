@@ -1,3 +1,6 @@
-flask
-gevent
+flask # if you don't use web server, then delete this line
+gevent # if you don't use web server, then delete this line
 opencv-python
+numpy
+tqdm
+windows-curses # if your os is not windows, then delete this line

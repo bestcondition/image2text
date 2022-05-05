@@ -13,7 +13,7 @@ pip install -r requirements.txt
 ```
 ```shell
 # 运行
-python cvt.py
+python text_image.py
 ```
 
 ![原图](/image/sun.jpg)
@@ -65,6 +65,17 @@ python server.py
 
 ![](./image/web_test.png)
 
+
+## 视频播放功能
+
+```shell
+# 最好在自带的终端运行
+python text_video.py ./video/bad_apple.mp4 --width 200
+
+# 更多用法，请查看帮助
+python text_video.py -h
+```
+
 ## 更新日志
 
 ### 2022年5月4日22点06分
@@ -73,3 +84,8 @@ python server.py
 - 计算长宽的函数都没了，没必要弄这么多函数
 - 改删了点参数，每行字符数改n，纯黑替换参数删除了，阈值改成0到255整数
 - 服务器默认绑定127.0.0.1，端口45883
+
+### 2022年5月5日16点27分
+
+- 封装成类，TextImage, TextVideo
+- 文本视频播放器
