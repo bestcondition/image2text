@@ -1,6 +1,6 @@
 from flask import Flask, request, render_template
 
-from text_image import im_read, image2text
+from text_image import im_read, TextImage
 
 app = Flask(__name__)
 
@@ -9,12 +9,12 @@ app = Flask(__name__)
 def cvt():
     image = im_read(request.files['image'])
     arg = request.form.to_dict()  # type:dict
-    return image2text(
+    return str(TextImage.from_image(
         image=image,
         n=int(arg['n']),
         threshold=int(arg['threshold']),
         image_inverse='image_inverse' in arg
-    )
+    ))
 
 
 @app.route('/')

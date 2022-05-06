@@ -1,3 +1,9 @@
+from collections import namedtuple
+from functools import partial
+import warnings
+from pathlib import Path
+import struct
+
 import numpy as np
 import cv2
 
@@ -5,10 +11,14 @@ import cv2
 META_W = 2
 META_H = 4
 
+# 起始字符序号
 BASE_ORD = 10240
 
+# 换行符
+LINE_BREAK = '\n'
+
 # 位置和位的映射，例如第一行第一个是第一位，第二行第一个是第二位，第一行第二个是第四位
-position_map = {
+POSITION_MAP = {
     (0, 0): 0,
     (1, 0): 1,
     (2, 0): 2,
@@ -18,6 +28,27 @@ position_map = {
     (2, 1): 6,
     (3, 1): 7,
 }
+# 储存每个符号用的类型
+PIXEL_TYPE = np.uint8
+PIXEL_BYTE = 1
+
+REPLACE_BLACK_PIXEL = 2 ** POSITION_MAP[3, 1]
+
+# 转换矩阵
+TRANSFORM_MATRIX = np.empty(shape=(META_H, META_W), dtype=PIXEL_TYPE)
+
+for position, index in POSITION_MAP.items():
+    TRANSFORM_MATRIX[position] = 2 ** index
+
+
+def array2int(array: np.ndarray) -> int:
+    return (array * TRANSFORM_MATRIX).sum()
+
+
+def int2char(pixel_int: int, replace_black=True) -> str:
+    return chr(
+        BASE_ORD + (REPLACE_BLACK_PIXEL if replace_black and pixel_int == 0 else pixel_int)
+    )
 
 
 def sure_gray(image: np.ndarray) -> np.ndarray:
@@ -28,19 +59,6 @@ def sure_gray(image: np.ndarray) -> np.ndarray:
     return image
 
 
-def array2char(array: np.ndarray):
-    """
-    数组转换成字符
-    """
-    o = BASE_ORD
-    for position, digit in position_map.items():
-        o += array[position] * (2 ** digit)
-    # 纯黑替换成右下角的点
-    if o == BASE_ORD:
-        o += 2 ** position_map[3, 1]
-    return chr(o)
-
-
 def im_read(file, flags=cv2.IMREAD_GRAYSCALE):
     """
     中文路径和filestorage
@@ -49,26 +67,77 @@ def im_read(file, flags=cv2.IMREAD_GRAYSCALE):
 
 
 class TextImage:
-    def __init__(self, string2d, copy=True):
-        if copy:
-            self.data = [''.join(line) for line in string2d]
+    SUFFIX = '.ti'
+    BIN_HEAD = b'TI'
+    ATTR_AND_FORMAT = [('w', '<I'), ('h', '<I')]
+    ATTR_INDEX = {
+        attr: index
+        for index, (attr, _) in enumerate(ATTR_AND_FORMAT)
+    }
+
+    def __init__(self, array: np.ndarray, w=None, h=None):  # 准备用numpy存数据
+        assert w != 0 and h != 0, '宽高不能为0'
+        if w and h:
+            # reshape一下
+            array.shape = (h, w)
         else:
-            assert isinstance(string2d, list)
-            assert isinstance(string2d[0], str)
-            self.data = string2d
-        self.h = len(self.data)
-        self.w = len(self.data[0])
-        self.shape = (self.h, self.w)
+            assert len(array.shape) == 2, '不指定宽高则传入数组必须为二维的'
+
+        self.data = array  # type: np.ndarray
+        # h=字符行数, w=每行字符数
+        self.h, self.w = self.data.shape
+
+    def to_str(self, replace_black=True) -> str:
+        # 提前赋值
+        map_func = partial(int2char, replace_black=replace_black)
+
+        return LINE_BREAK.join(
+            ''.join(map(map_func, line_arr))
+            for line_arr in self.data
+        )
 
     def __str__(self):
-        return '\n'.join(self.data)
+        return self.to_str()
+
+    def to_bytes(self):
+        return self.data.tobytes()
+
+    def save(self, file):
+        file = Path(file)
+        if file.suffix.lower() != self.SUFFIX:
+            warnings.warn(f"file suffix better be {self.SUFFIX}, but yours is {file.suffix}")
+        with open(file, mode='wb') as fp:
+            fp.write(self.BIN_HEAD)
+            for attr, fmt in self.ATTR_AND_FORMAT:
+                fp.write(struct.pack(fmt, self.__getattribute__(attr)))
+            fp.write(self.to_bytes())
 
     @classmethod
-    def from_array(cls, image: np.ndarray, n, threshold=127, image_inverse=False):
+    def from_text_image_file(cls, ti_file):
+        with open(ti_file, mode='rb') as fp:
+            this_bin_head = fp.read(len(cls.BIN_HEAD))
+            assert this_bin_head == cls.BIN_HEAD, f'bin head should be {cls.BIN_HEAD}, but yours is {this_bin_head}'
+            info_list = [
+                # because unpack return a tuple
+                struct.unpack(fmt, fp.read(struct.calcsize(fmt)))[0]
+                for attr, fmt in cls.ATTR_AND_FORMAT
+            ]
+            w = info_list[cls.ATTR_INDEX['w']]
+            h = info_list[cls.ATTR_INDEX['h']]
+            array = np.frombuffer(fp.read(), dtype=PIXEL_TYPE)  # type:np.ndarray
+            assert array.size == w * h, f'file is just not right, expect w * h = {w * h}, but read {array.size}'
+            return cls(array=array, w=w, h=h)
+
+    @classmethod
+    def from_buffer(cls, buffer, w: int, h: int):
+        return cls(np.frombuffer(buffer, dtype=PIXEL_TYPE), w=w, h=h)
+
+    @classmethod
+    def from_image(cls, image: np.ndarray, n, threshold=127, image_inverse=False):
         """
         图片转字符串
 
-        :param image: 二值化图片
+        :param image: 灰度图，不灰度也给你变灰度
         :param n: 一行几个字符
         :param threshold: 二值化阈值
         :param image_inverse: 是否反相
@@ -90,19 +159,43 @@ class TextImage:
         mask = mask == 255
         if image_inverse:
             mask = ~mask
-        text_image = cls(
-            (
-                array2char(mask[META_H * y:META_H * (y + 1), META_W * x:META_W * (x + 1)])
-                for x in range(n)  # 每行字符数
-            )
-            for y in range(n_h // META_H)  # 文本行数
+
+        # 文本图片的宽
+        c_w = n
+        # 文本图片的高
+        c_h = n_h // META_H
+        return cls(
+            np.fromiter(
+                (
+                    array2int(mask[META_H * y:META_H * (y + 1), META_W * x:META_W * (x + 1)])
+                    for y in range(c_h)  # 文本行数
+                    for x in range(c_w)  # 每行字符数
+                ),
+                dtype=PIXEL_TYPE
+            ),
+            w=c_w,
+            h=c_h
         )
-        return text_image
+
+
+def show(file, n, threshold, image_inverse):
+    file = Path(file)
+    if file.suffix.lower() == TextImage.SUFFIX:
+        ti = TextImage.from_text_image_file(file)
+    else:
+        ti = TextImage.from_image(im_read(str(file)), n, threshold, image_inverse)
+    print(ti)
 
 
 if __name__ == '__main__':
-    print(TextImage.from_array(
-        im_read(r"image/sun.jpg"),
-        50,
-        image_inverse=False
-    ))
+    import argparse
+
+    parser = argparse.ArgumentParser("文本图片显示")
+    parser.add_argument('file', type=str, help='图片地址')
+    parser.add_argument('-n', type=int, help='每行字符数', default=50)
+    parser.add_argument('--threshold', type=int, help="二值化阈值，0到255", default=127)
+    parser.add_argument('--image_inverse', action="store_true", help="图像反相，黑白颠倒")
+
+    args = parser.parse_args().__dict__
+
+    show(**args)
