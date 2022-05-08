@@ -1,4 +1,3 @@
-from collections import namedtuple
 from functools import partial
 import warnings
 from pathlib import Path
@@ -13,6 +12,9 @@ META_H = 4
 
 # 起始字符序号
 BASE_ORD = 10240
+
+# 空格offset
+BLANK_OFFSET = ord(' ') - BASE_ORD
 
 # 换行符
 LINE_BREAK = '\n'
@@ -45,9 +47,9 @@ def array2int(array: np.ndarray) -> int:
     return (array * TRANSFORM_MATRIX).sum()
 
 
-def int2char(pixel_int: int, replace_black=True) -> str:
+def int2char(pixel_int: int, blank_offset=BLANK_OFFSET) -> str:
     return chr(
-        BASE_ORD + (REPLACE_BLACK_PIXEL if replace_black and pixel_int == 0 else pixel_int)
+        BASE_ORD + (blank_offset if pixel_int == 0 else pixel_int)
     )
 
 
@@ -75,7 +77,7 @@ class TextImage:
         for index, (attr, _) in enumerate(ATTR_AND_FORMAT)
     }
 
-    def __init__(self, array: np.ndarray, w=None, h=None):  # 准备用numpy存数据
+    def __init__(self, array: np.ndarray, w=None, h=None, blank_offset=BLANK_OFFSET):  # 准备用numpy存数据
         assert w != 0 and h != 0, '宽高不能为0'
         if w and h:
             # reshape一下
@@ -86,10 +88,11 @@ class TextImage:
         self.data = array  # type: np.ndarray
         # h=字符行数, w=每行字符数
         self.h, self.w = self.data.shape
+        self.blank_offset = blank_offset
 
-    def to_str(self, replace_black=True) -> str:
+    def to_str(self, blank_offset=BLANK_OFFSET) -> str:
         # 提前赋值
-        map_func = partial(int2char, replace_black=replace_black)
+        map_func = partial(int2char, blank_offset=blank_offset)
 
         return LINE_BREAK.join(
             ''.join(map(map_func, line_arr))
@@ -97,7 +100,7 @@ class TextImage:
         )
 
     def __str__(self):
-        return self.to_str()
+        return self.to_str(blank_offset=self.blank_offset)
 
     def to_bytes(self):
         return self.data.tobytes()
@@ -113,7 +116,7 @@ class TextImage:
             fp.write(self.to_bytes())
 
     @classmethod
-    def from_text_image_file(cls, ti_file):
+    def from_text_image_file(cls, ti_file, blank_offset=BLANK_OFFSET):
         with open(ti_file, mode='rb') as fp:
             this_bin_head = fp.read(len(cls.BIN_HEAD))
             assert this_bin_head == cls.BIN_HEAD, f'bin head should be {cls.BIN_HEAD}, but yours is {this_bin_head}'
@@ -126,14 +129,14 @@ class TextImage:
             h = info_list[cls.ATTR_INDEX['h']]
             array = np.frombuffer(fp.read(), dtype=PIXEL_TYPE)  # type:np.ndarray
             assert array.size == w * h, f'file is just not right, expect w * h = {w * h}, but read {array.size}'
-            return cls(array=array, w=w, h=h)
+            return cls(array=array, w=w, h=h, blank_offset=blank_offset)
 
     @classmethod
     def from_buffer(cls, buffer, w: int, h: int):
         return cls(np.frombuffer(buffer, dtype=PIXEL_TYPE), w=w, h=h)
 
     @classmethod
-    def from_image(cls, image: np.ndarray, n, threshold=127, image_inverse=False):
+    def from_image(cls, image: np.ndarray, n, threshold=127, image_inverse=False, blank_offset=BLANK_OFFSET):
         """
         图片转字符串
 
@@ -141,6 +144,7 @@ class TextImage:
         :param n: 一行几个字符
         :param threshold: 二值化阈值
         :param image_inverse: 是否反相
+        :param blank_offset: 空白字符序号的偏移量
         :return:
         """
         # 至少一个单位行吧
@@ -174,16 +178,18 @@ class TextImage:
                 dtype=PIXEL_TYPE
             ),
             w=c_w,
-            h=c_h
+            h=c_h,
+            blank_offset=blank_offset
         )
 
 
-def show(file, n, threshold, image_inverse):
+def show(file, n, threshold, image_inverse, replace_blank):
+    offset = BLANK_OFFSET if replace_blank else REPLACE_BLACK_PIXEL
     file = Path(file)
     if file.suffix.lower() == TextImage.SUFFIX:
-        ti = TextImage.from_text_image_file(file)
+        ti = TextImage.from_text_image_file(file, blank_offset=offset)
     else:
-        ti = TextImage.from_image(im_read(str(file)), n, threshold, image_inverse)
+        ti = TextImage.from_image(im_read(str(file)), n, threshold, image_inverse, blank_offset=offset)
     print(ti)
 
 
@@ -195,6 +201,7 @@ if __name__ == '__main__':
     parser.add_argument('-n', type=int, help='每行字符数', default=50)
     parser.add_argument('--threshold', type=int, help="二值化阈值，0到255", default=127)
     parser.add_argument('--image_inverse', action="store_true", help="图像反相，黑白颠倒")
+    parser.add_argument('--replace_blank', action="store_false", help="空白替换")
 
     args = parser.parse_args().__dict__
 
